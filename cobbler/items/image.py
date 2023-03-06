@@ -33,6 +33,7 @@ class Image(item.Item):
 
     TYPE_NAME = "image"
     COLLECTION_TYPE = "image"
+    CHILD_TYPES = ["system"]
 
     def __init__(self, api, *args, **kwargs):
         """

@@ -30,6 +30,7 @@ class Menu(item.Item):
     """
 
     COLLECTION_TYPE = "menu"
+    CHILD_TYPES = ["menu"]
 
     def __init__(self, api, *args, **kwargs):
         """

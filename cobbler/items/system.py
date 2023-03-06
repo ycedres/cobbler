@@ -735,6 +735,7 @@ class System(Item):
     # Constants
     TYPE_NAME = "system"
     COLLECTION_TYPE = "system"
+    CHILD_TYPES = ["system"]
 
     def __init__(self, api, *args, **kwargs):
         """
@@ -2026,7 +2027,7 @@ class System(Item):
         :setter: Sets the value for the property ``children``.
         :return:
         """
-        return self._children
+        return [c.name for c in self._children]
 
     @children.setter
     def children(self, value: List[str]):
