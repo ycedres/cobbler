@@ -37,6 +37,7 @@ class Distro(item.Item):
     # Constants
     TYPE_NAME = "distro"
     COLLECTION_TYPE = "distro"
+    CHILD_TYPES = ["profile"]
 
     def __init__(self, api, *args, **kwargs):
         """
