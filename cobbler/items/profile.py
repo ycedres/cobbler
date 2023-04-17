@@ -35,6 +35,7 @@ class Profile(item.Item):
 
     TYPE_NAME = "profile"
     COLLECTION_TYPE = "profile"
+    CHILD_TYPES = ["profile", "system", "image"]
 
     def __init__(self, api, *args, **kwargs):
         """
