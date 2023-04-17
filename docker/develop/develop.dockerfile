@@ -48,7 +48,8 @@ RUN zypper install --no-recommends -y \
     vim                        \
     wget                       \
     which                      \
-    xorriso
+    xorriso                    \
+    dosfstools
 
 # Add virtualization repository
 RUN zypper ar https://download.opensuse.org/repositories/Virtualization/15.3/Virtualization.repo

@@ -35,6 +35,7 @@ class Item:
     # Constants
     TYPE_NAME = "generic"
     COLLECTION_TYPE = "generic"
+    CHILD_TYPES = []
 
     @classmethod
     def __find_compare(cls, from_search: Union[str, list, dict, bool], from_obj: Union[str, list, dict, bool]):
@@ -731,13 +732,17 @@ class Item:
 
         :getter: This is a list of all descendants. May be empty if none exist.
         """
-        results = []
-        kids = self.children
-        for kid in kids:
-            # FIXME: Get kid objects
-            grandkids = kid.descendants
-            results.extend(grandkids)
-        return results
+        descendants = []
+        for child in self.children:
+            # different types with same name are possible
+            for child_type in self.CHILD_TYPES:
+                child_object = self.api.find_items(what=child_type, name=child, return_list=False)
+                # child_object is self -> infinite recursion
+                if child_object and child_object is not self:
+                    descendants.append(child_object)
+                    descendants.extend(child_object.descendants)
+
+        return descendants
 
     @property
     def is_subobject(self) -> bool:
