@@ -73,7 +73,7 @@ def test_generate_profile_install(request, cobbler_api, create_distro, create_pr
     # TODO: Make tests more sophisticated
     assert (
         result
-        == " append initrd=/%s.img install=http://192.168.40.1:80/cblr/links/%s autoyast=default.ks"
+        == "  APPEND initrd=/%s.img install=http://192.168.40.1:80/cblr/links/%s autoyast=default.ks"
         % (originalname, originalname)
     )
 
