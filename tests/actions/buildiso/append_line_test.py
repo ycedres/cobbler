@@ -66,7 +66,7 @@ def test_generate_profile_install(request, cobbler_api, create_distro, create_pr
     test_builder = AppendLineBuilder(test_distro.name, blendered_data)
 
     # Act
-    result = test_builder.generate_profile("suse", "opensuse15generic")
+    result = test_builder.generate_profile("suse")
 
     # Assert
     # Very basic test yes but this is the expected result atm
