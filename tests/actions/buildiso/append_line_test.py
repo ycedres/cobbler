@@ -17,6 +17,7 @@ def test_generate_system(
     test_system = create_system(profile_name=test_profile.name)
     blendered_data = utils.blender(cobbler_api, False, test_system)
     test_builder = AppendLineBuilder(test_distro.name, blendered_data)
+    originalname = request.node.originalname or request.node.name
 
     # Act
     result = test_builder.generate_system(test_distro, test_system, False)
@@ -27,13 +28,39 @@ def test_generate_system(
     assert (
         result
         == "  APPEND initrd=/%s.img install=http://192.168.1.1:80/cblr/links/%s autoyast=default.ks"
-        % (request.node.name, request.node.name)
+        % (originalname, originalname)
     )
 
 
 def test_generate_profile(request, cobbler_api, create_distro, create_profile):
     # Arrange
     test_distro = create_distro()
+    test_profile = create_profile(test_distro.name)
+    blendered_data = utils.blender(cobbler_api, False, test_profile)
+    test_builder = AppendLineBuilder(test_distro.name, blendered_data)
+    originalname = request.node.originalname or request.node.name
+
+    # Act
+    result = test_builder.generate_profile("suse")
+
+    # Assert
+    # Very basic test yes but this is the expected result atm
+    # TODO: Make tests more sophisticated
+    assert (
+        result
+        == "  APPEND initrd=/%s.img install=http://192.168.1.1:80/cblr/links/%s autoyast=default.ks"
+        % (originalname, originalname)
+    )
+
+
+def test_generate_profile_install(request, cobbler_api, create_distro, create_profile):
+    # Arrange
+    test_distro = create_distro()
+    originalname = request.node.originalname or request.node.name
+
+    test_distro.kernel_options = (
+        "install=http://192.168.40.1:80/cblr/links/%s" % originalname
+    )
     test_profile = create_profile(test_distro.name)
     blendered_data = utils.blender(cobbler_api, False, test_profile)
     test_builder = AppendLineBuilder(test_distro.name, blendered_data)
@@ -46,6 +73,7 @@ def test_generate_profile(request, cobbler_api, create_distro, create_profile):
     # TODO: Make tests more sophisticated
     assert (
         result
-        == "  APPEND initrd=/%s.img install=http://192.168.1.1:80/cblr/links/%s autoyast=default.ks"
-        % (request.node.name, request.node.name)
+        == "  APPEND initrd=/%s.img install=http://192.168.40.1:80/cblr/links/%s autoyast=default.ks"
+        % (originalname, originalname)
     )
+
