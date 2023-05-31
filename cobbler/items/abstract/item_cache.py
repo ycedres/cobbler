@@ -1,9 +1,7 @@
 """
-Module that contains the logic for Cobbler to cache an item.
-
-The cache significantly speeds up Cobbler. This effect is achieved thanks to the reduced amount of lookups that are
-required to be done.
+TODO
 """
+
 
 from typing import TYPE_CHECKING, Any, Dict, Optional
 

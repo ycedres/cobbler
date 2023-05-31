@@ -4,6 +4,7 @@ Cobbler module that contains the code for a generic Cobbler item.
 Changelog:
 
 V3.4.0 (unreleased):
+    * Split into multiple "Item" and "InheritableItem"
     * (Re-)Added Cache implementation with the following new methods and properties:
         * ``cache``
         * ``inmemery``
@@ -93,115 +94,35 @@ V2.8.5:
         * ``cached_datastruct``: str
 """
 
-# SPDX-License-Identifier: GPL-2.0-or-later
-# SPDX-FileCopyrightText: Copyright 2006-2009, Red Hat, Inc and Others
-# SPDX-FileCopyrightText: Michael DeHaan <michael.dehaan AT gmail>
-
 import copy
 import enum
 import fnmatch
-import logging
 import pprint
-import re
 import uuid
 from abc import abstractmethod
-from typing import TYPE_CHECKING, Any, Dict, List, Optional, Tuple, Type, Union
+from typing import TYPE_CHECKING, Any, Dict, List, Optional, Union
 
 import yaml
 
 from cobbler import enums, utils
 from cobbler.cexceptions import CX
 from cobbler.decorator import InheritableDictProperty, InheritableProperty, LazyProperty
+from cobbler.items.abstract.base_item import BaseItem
 from cobbler.items.abstract.item_cache import ItemCache
 from cobbler.utils import input_converters
 
 if TYPE_CHECKING:
     from cobbler.api import CobblerAPI
-    from cobbler.cobbler_collections.collection import ITEM, ITEM_UNION
-    from cobbler.items.distro import Distro
-    from cobbler.items.menu import Menu
-    from cobbler.items.profile import Profile
-    from cobbler.items.system import System
-    from cobbler.settings import Settings
 
-
-RE_OBJECT_NAME = re.compile(r"[a-zA-Z0-9_\-.:]*$")
-
-
-class Item:
+class Item(BaseItem):
     """
-    An Item is a serializable thing that can appear in a Collection
+    An Item is a serializable thing that can appear in a Collection.
     """
+
 
     # Constants
     TYPE_NAME = "generic"
     COLLECTION_TYPE = "generic"
-
-    # Item types dependencies.
-    # Used to determine descendants and cache invalidation.
-    # Format: {"Item Type": [("Dependent Item Type", "Dependent Type attribute"), ..], [..]}
-    TYPE_DEPENDENCIES: Dict[str, List[Tuple[str, str]]] = {
-        "package": [
-            ("mgmtclass", "packages"),
-        ],
-        "file": [
-            ("mgmtclass", "files"),
-            ("image", "file"),
-        ],
-        "mgmtclass": [
-            ("distro", "mgmt_classes"),
-            ("profile", "mgmt_classes"),
-            ("system", "mgmt_classes"),
-        ],
-        "repo": [
-            ("profile", "repos"),
-        ],
-        "distro": [
-            ("profile", "distro"),
-        ],
-        "menu": [
-            ("menu", "parent"),
-            ("image", "menu"),
-            ("profile", "menu"),
-        ],
-        "profile": [
-            ("profile", "parent"),
-            ("system", "profile"),
-        ],
-        "image": [
-            ("system", "image"),
-        ],
-        "system": [],
-    }
-
-    # Defines a logical hierarchy of Item Types.
-    # Format: {"Item Type": [("Previous level Type", "Attribute to go to the previous level",), ..],
-    #                       [("Next level Item Type", "Attribute to move from the next level"), ..]}
-    LOGICAL_INHERITANCE: Dict[
-        str, Tuple[List[Tuple[str, str]], List[Tuple[str, str]]]
-    ] = {
-        "distro": (
-            [],
-            [
-                ("profile", "distro"),
-            ],
-        ),
-        "profile": (
-            [
-                ("distro", "distro"),
-            ],
-            [
-                ("system", "profile"),
-            ],
-        ),
-        "image": (
-            [],
-            [
-                ("system", "image"),
-            ],
-        ),
-        "system": ([("image", "image"), ("profile", "profile")], []),
-    }
 
     @classmethod
     def __find_compare(
@@ -311,17 +232,13 @@ class Item:
         :param api: The Cobbler API object which is used for resolving information.
         :param is_subobject: See above extensive description.
         """
+        super().__init__(api, **kwargs)
         # Prevent attempts to clear the to_dict cache before the object is initialized.
         self._has_initialized = False
 
         self._parent = ""
         self._depth = 0
-        self._children: List[str] = []
-        self._ctime = 0.0
-        self._mtime = 0.0
-        self._uid = uuid.uuid4().hex
-        self._name = ""
-        self._comment = ""
+
         self._kernel_options: Union[Dict[Any, Any], str] = {}
         self._kernel_options_post: Union[Dict[Any, Any], str] = {}
         self._autoinstall_meta: Union[Dict[Any, Any], str] = {}
@@ -333,11 +250,7 @@ class Item:
         self._cache: ItemCache = ItemCache(api)
         self._mgmt_classes: Union[List[Any], str] = enums.VALUE_INHERITED
         self._mgmt_parameters: Union[Dict[Any, Any], str] = {}
-        self._is_subobject = is_subobject
         self._inmemory = True
-
-        self.logger = logging.getLogger()
-        self.api = api
 
         if len(kwargs) > 0:
             kwargs.update({"is_subobject": is_subobject})
@@ -347,27 +260,6 @@ class Item:
 
         if not self._has_initialized:
             self._has_initialized = True
-
-    def __eq__(self, other: Any) -> bool:
-        """
-        Comparison based on the uid for our items.
-
-        :param other: The other Item to compare.
-        :return: True if uid is equal, otherwise false.
-        """
-        if isinstance(other, Item):
-            return self._uid == other.uid
-        return False
-
-    def __hash__(self):
-        """
-        Hash table for Items.
-        Requires special handling if the uid value changes and the Item
-        is present in set, frozenset, and dict types.
-
-        :return: hash(uid).
-        """
-        return hash(self._uid)
 
     def __setattr__(self, name: str, value: Any):
         """
@@ -488,103 +380,6 @@ class Item:
 
         utils.dict_annihilate(merged_dict)
         return merged_dict
-
-    @property
-    def uid(self) -> str:
-        """
-        The uid is the internal unique representation of a Cobbler object. It should never be used twice, even after an
-        object was deleted.
-
-        :getter: The uid for the item. Should be unique across a running Cobbler instance.
-        :setter: The new uid for the object. Should only be used by the Cobbler Item Factory.
-        """
-        return self._uid
-
-    @uid.setter
-    def uid(self, uid: str) -> None:
-        """
-        Setter for the uid of the item.
-
-        :param uid: The new uid.
-        """
-        if self._uid != uid and self.COLLECTION_TYPE != Item.COLLECTION_TYPE:
-            name = self.name.lower()
-            collection = self.api.get_items(self.COLLECTION_TYPE)
-            with collection.lock:
-                if collection.get(name) is not None:
-                    # Changing the hash of an object requires special handling.
-                    collection.listing.pop(name)
-                    self._uid = uid
-                    collection.listing[name] = self  # type: ignore
-                    return
-        self._uid = uid
-
-    @property
-    def ctime(self) -> float:
-        """
-        Property which represents the creation time of the object.
-
-        :getter: The float which can be passed to Python time stdlib.
-        :setter: Should only be used by the Cobbler Item Factory.
-        """
-        return self._ctime
-
-    @ctime.setter
-    def ctime(self, ctime: float) -> None:
-        """
-        Setter for the ctime property.
-
-        :param ctime: The time the object was created.
-        :raises TypeError: In case ``ctime`` was not of type float.
-        """
-        if not isinstance(ctime, float):  # type: ignore
-            raise TypeError("ctime needs to be of type float")
-        self._ctime = ctime
-
-    @property
-    def name(self) -> str:
-        """
-        Property which represents the objects name.
-
-        :getter: The name of the object.
-        :setter: Updating this has broad implications. Please try to use the ``rename()`` functionality from the
-                 corresponding collection.
-        """
-        return self._name
-
-    @name.setter
-    def name(self, name: str) -> None:
-        """
-        The objects name.
-
-        :param name: object name string
-        :raises TypeError: In case ``name`` was not of type str.
-        :raises ValueError: In case there were disallowed characters in the name.
-        """
-        if not isinstance(name, str):  # type: ignore
-            raise TypeError("name must of be type str")
-        if not RE_OBJECT_NAME.match(name):
-            raise ValueError(f"Invalid characters in name: '{name}'")
-        self._name = name
-
-    @LazyProperty
-    def comment(self) -> str:
-        """
-        For every object you are able to set a unique comment which will be persisted on the object.
-
-        :getter: The comment or an emtpy string.
-        :setter: The new comment for the item.
-        """
-        return self._comment
-
-    @comment.setter
-    def comment(self, comment: str) -> None:
-        """
-        Setter for the comment of the item.
-
-        :param comment: The new comment. If ``None`` the comment will be set to an emtpy string.
-        """
-        self._comment = comment
 
     @InheritableProperty
     def owners(self) -> List[Any]:
@@ -853,186 +648,6 @@ class Item:
         if not isinstance(depth, int):  # type: ignore
             raise TypeError("depth needs to be of type int")
         self._depth = depth
-
-    @property
-    def mtime(self) -> float:
-        """
-        Represents the last modification time of the object via the API. This is not updated automagically.
-
-        :getter: The float which can be fed into a Python time object.
-        :setter: The new time something was edited via the API.
-        """
-        return self._mtime
-
-    @mtime.setter
-    def mtime(self, mtime: float) -> None:
-        """
-        Setter for the modification time of the object.
-
-        :param mtime: The new modification time.
-        """
-        if not isinstance(mtime, float):  # type: ignore
-            raise TypeError("mtime needs to be of type float")
-        self._mtime = mtime
-
-    @LazyProperty
-    def parent(self) -> Optional[Union["System", "Profile", "Distro", "Menu"]]:
-        """
-        This property contains the name of the parent of an object. In case there is not parent this return
-        None.
-
-        :getter: Returns the parent object or None if it can't be resolved via the Cobbler API.
-        :setter: The name of the new logical parent.
-        """
-        if self._parent == "":
-            return None
-        return self.api.get_items(self.COLLECTION_TYPE).get(self._parent)  # type: ignore
-
-    @parent.setter
-    def parent(self, parent: str) -> None:
-        """
-        Set the parent object for this object.
-
-        :param parent: The new parent object. This needs to be a descendant in the logical inheritance chain.
-        """
-        if not isinstance(parent, str):  # type: ignore
-            raise TypeError('Property "parent" must be of type str!')
-        if not parent:
-            self._parent = ""
-            return
-        if parent == self.name:
-            # check must be done in two places as setting parent could be called before/after setting name...
-            raise CX("self parentage is weird")
-        found = self.api.get_items(self.COLLECTION_TYPE).get(parent)
-        if found is None:
-            raise CX(f'profile "{parent}" not found, inheritance not possible')
-        self._parent = parent
-        self.depth = found.depth + 1
-
-    @LazyProperty
-    def get_parent(self) -> str:
-        """
-        This method returns the name of the parent for the object. In case there is not parent this return
-        empty string.
-        """
-        return self._parent
-
-    def get_conceptual_parent(self) -> Optional["ITEM_UNION"]:
-        """
-        The parent may just be a superclass for something like a subprofile. Get the first parent of a different type.
-
-        :return: The first item which is conceptually not from the same type.
-        """
-        if self is None:  # type: ignore
-            return None
-
-        curr_obj = self
-        next_obj = curr_obj.parent
-        while next_obj is not None:
-            curr_obj = next_obj
-            next_obj = next_obj.parent
-
-        if curr_obj.TYPE_NAME in curr_obj.LOGICAL_INHERITANCE:
-            for prev_level in curr_obj.LOGICAL_INHERITANCE[curr_obj.TYPE_NAME][0]:
-                prev_level_type = prev_level[0]
-                prev_level_name = getattr(curr_obj, "_" + prev_level[1])
-                if prev_level_name is not None and prev_level_name != "":
-                    prev_level_item = self.api.find_items(
-                        prev_level_type, name=prev_level_name, return_list=False
-                    )
-                    if prev_level_item is not None and not isinstance(
-                        prev_level_item, list
-                    ):
-                        return prev_level_item
-        return None
-
-    @property
-    def logical_parent(self) -> Any:
-        """
-        This property contains the name of the logical parent of an object. In case there is not parent this return
-        None.
-
-        :getter: Returns the parent object or None if it can't be resolved via the Cobbler API.
-        :setter: The name of the new logical parent.
-        """
-        parent = self.parent
-        if parent is None:
-            return self.get_conceptual_parent()
-        return parent
-
-    @property
-    def children(self) -> List["ITEM_UNION"]:
-        """
-        The list of logical children of any depth.
-        :getter: An empty list in case of items which don't have logical children.
-        :setter: Replace the list of children completely with the new provided one.
-        """
-        results: List[Any] = []
-        list_items = self.api.get_items(self.COLLECTION_TYPE)
-        for obj in list_items:
-            if obj.get_parent == self._name:
-                results.append(obj)
-        return results
-
-    def tree_walk(self) -> List["ITEM_UNION"]:
-        """
-        Get all children related by parent/child relationship.
-        :return: The list of children objects.
-        """
-        results: List[Any] = []
-        for child in self.children:
-            results.append(child)
-            results.extend(child.tree_walk())
-
-        return results
-
-    @property
-    def descendants(self) -> List["ITEM_UNION"]:
-        """
-        Get objects that depend on this object, i.e. those that would be affected by a cascading delete, etc.
-
-        .. note:: This is a read only property.
-
-        :getter: This is a list of all descendants. May be empty if none exist.
-        """
-        childs = self.tree_walk()
-        results = set(childs)
-        childs.append(self)  # type: ignore
-        for child in childs:
-            for item_type in Item.TYPE_DEPENDENCIES[child.COLLECTION_TYPE]:
-                dep_type_items = self.api.find_items(
-                    item_type[0], {item_type[1]: child.name}, return_list=True
-                )
-                if dep_type_items is None or not isinstance(dep_type_items, list):
-                    raise ValueError("Expected list to be returned by find_items")
-                results.update(dep_type_items)
-                for dep_item in dep_type_items:
-                    results.update(dep_item.descendants)
-        return list(results)
-
-    @LazyProperty
-    def is_subobject(self) -> bool:
-        """
-        Weather the object is a subobject of another object or not.
-
-        :getter: True in case the object is a subobject, False otherwise.
-        :setter: Sets the value. If this is not a bool, this will raise a ``TypeError``.
-        """
-        return self._is_subobject
-
-    @is_subobject.setter
-    def is_subobject(self, value: bool) -> None:
-        """
-        Setter for the property ``is_subobject``.
-
-        :param value: The boolean value whether this is a subobject or not.
-        :raises TypeError: In case the value was not of type bool.
-        """
-        if not isinstance(value, bool):  # type: ignore
-            raise TypeError(
-                "Field is_subobject of object item needs to be of type bool!"
-            )
-        self._is_subobject = value
 
     def sort_key(self, sort_fields: List[Any]):
         """
@@ -1306,26 +921,6 @@ class Item:
                             for ancestor_name in attr_val:
                                 deserialize_ancestor(ancestor_item_type, ancestor_name)
         self.from_dict(item_dict)
-
-    def grab_tree(self) -> List[Union["Item", "Settings"]]:
-        """
-        Climb the tree and get every node.
-
-        :return: The list of items with all parents from that object upwards the tree. Contains at least the item
-                 itself and the settings of Cobbler.
-        """
-        results: List[Union["Item", "Settings"]] = [self]
-        parent = self.logical_parent
-        while parent is not None:
-            results.append(parent)
-            parent = parent.logical_parent
-            # FIXME: Now get the object and check its existence
-        results.append(self.api.settings())
-        self.logger.debug(
-            "grab_tree found %s children (including settings) of this object",
-            len(results),
-        )
-        return results
 
     @property
     def cache(self) -> ItemCache:
