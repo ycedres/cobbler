@@ -62,6 +62,7 @@ RUN zypper install --no-recommends -y \
     wget                       \
     which                      \
     xorriso                    \
+    mtools                     \
     dosfstools
 
 # Add virtualization repository
