@@ -46,6 +46,7 @@ RUN zypper install -y          \
     python3-wheel              \
     rpm-build                  \
     which                      \
+    mtools                     \
     dosfstools
 
 # Add bootloader packages
