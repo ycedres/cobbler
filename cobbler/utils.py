@@ -26,6 +26,7 @@ import glob
 import json
 import logging
 import os
+import pathlib
 import random
 import re
 import shlex
@@ -38,7 +39,6 @@ import urllib.parse
 import urllib.request
 import xmlrpc.client
 from functools import reduce
-from pathlib import Path
 from typing import Any, Dict, List, Optional, Pattern, Union
 from xmlrpc.client import ServerProxy
 
@@ -413,7 +413,7 @@ def remove_yum_olddata(path: os.PathLike):
         "repodata/repodata"
     ]
     for pathseg in directories_to_try:
-        olddata = Path(path, pathseg)
+        olddata = pathlib.Path(path, pathseg)
         if olddata.is_dir() and olddata.exists():
             logger.info('Removing: "%s"', olddata)
             shutil.rmtree(olddata, ignore_errors=False, onerror=None)
@@ -1306,6 +1306,23 @@ def copyfile_pattern(pattern, dst, require_match: bool = True, symlink_ok: bool 
         linkfile(file, dst1, symlink_ok=symlink_ok, cache=cache, api=api)
 
 
+def copyfileimage(src: str, image_location: str, dst: str) -> None:
+    """
+    Copy a file from source to the destination in the image.
+    :param src: The source file.
+    :param image_location: The location of the image.
+    :param dst: The destination for the file.
+    """
+    cmd = ["mcopy", "-n", "-i", image_location, src, "::/" + dst]
+    try:
+        logger.info('running: "%s"', cmd)
+        subprocess_call(cmd, shell=False)
+    except subprocess.CalledProcessError as error:
+        raise OSError(
+            f"Error while copying file to image ({src} -> {dst}):\n{error.output}"
+        ) from error
+
+
 def rmfile(path: str):
     """
     Delete a single file.
@@ -1360,7 +1377,7 @@ def rmglob_files(path: str, glob_pattern: str):
     :param path: The folder of the files to remove.
     :param glob_pattern: The glob pattern for the files to remove in ``path``.
     """
-    for p in Path(path).glob(glob_pattern):
+    for p in pathlib.Path(path).glob(glob_pattern):
         rmfile(str(p))
 
 
@@ -1379,6 +1396,28 @@ def mkdir(path, mode=0o755):
         if os_error.errno != 17:
             log_exc()
             raise CX("Error creating %s" % path) from os_error
+
+
+def mkdirimage(path: pathlib.Path, image_location: str) -> None:
+    """
+    Create a directory in an image.
+
+    :param path: The path to create the directory at.
+    :param image_location: The location of the image.
+    """
+
+    path_parts = path.parts
+    cmd = ["mmd", "-i", image_location, str(path)]
+    try:
+        # Create all parent directories one by one inside the image
+        for parent_directory in range(1, len(path_parts) + 1):
+            cmd[-1] = "/".join(path_parts[:parent_directory])
+            logger.info('running: "%s"', cmd)
+            subprocess_call(cmd, shell=False)
+    except subprocess.CalledProcessError as error:
+        raise OSError(
+            f"Error while creating directory ({cmd[-1]}) in image {image_location}.\n{error.output}"
+        ) from error
 
 
 def path_tail(apath, bpath) -> str:
