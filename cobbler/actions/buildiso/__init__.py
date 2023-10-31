@@ -12,7 +12,6 @@ import re
 import os
 import pathlib
 import shutil
-import textwrap
 from typing import Dict, List, NamedTuple, Optional, Union
 
 from cobbler import templar, utils
@@ -115,14 +114,10 @@ class BuildIso:
             .joinpath("grub_menuentry.template")
             .read_text(encoding="UTF-8")
         )
-        self.bootinfo_template = textwrap.dedent(
-            """\
-            <chrp-boot>
-            <description>COBBLER INSTALL</description>
-            <os-name>{{ distro_name }}</os-name>
-            <boot-script>boot &device;:1,\\boot\\grub.elf</boot-script>
-            </chrp-boot>
-            """
+        self.bootinfo_template = (
+            pathlib.Path(api.settings().iso_template_dir)
+            .joinpath("bootinfo.template")
+            .read_text(encoding="UTF-8")
         )
 
     def _find_distro_source(self, known_file: str, distro_mirror: str) -> str:
