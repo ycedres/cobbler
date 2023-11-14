@@ -8,11 +8,11 @@ import itertools
 import os
 import pathlib
 import re
-from typing import Dict, List, Iterable, Tuple, cast
+from typing import Dict, Iterable, List, Tuple
 
 from cobbler import utils
 from cobbler.actions import buildiso
-from cobbler.actions.buildiso import BootFilesCopyset, LoaderCfgsParts, Autoinstall
+from cobbler.actions.buildiso import Autoinstall, BootFilesCopyset, LoaderCfgsParts
 from cobbler.enums import Archs
 
 CDREGEX = re.compile(r"^\s*url .*\n", re.IGNORECASE | re.MULTILINE)
@@ -140,7 +140,7 @@ class StandaloneBuildiso(buildiso.BuildIso):
         if distro_obj.breed == "redhat":
             autoinstall = CDREGEX.sub("cdrom\n", autoinstall, count=1)
 
-        repos = []
+        repos: List[str] = []
         if airgapped:
             repos = data.get("repos", [])
             if repos:
@@ -155,7 +155,7 @@ class StandaloneBuildiso(buildiso.BuildIso):
         cfg_parts.isolinux.append(isolinux)
         cfg_parts.grub.append(grub)
         cfg_parts.bootfiles_copysets.append(to_copy)
-        autoinstall_data[name] = Autoinstall(autoinstall, cast(List[str], repos))
+        autoinstall_data[name] = Autoinstall(autoinstall, repos)
 
     def _update_repos_in_autoinstall_data(self, autoinstall_data, repos_names) -> str:
         for repo_name in repos_names:
