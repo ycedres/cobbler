@@ -12,11 +12,11 @@ import re
 import os
 import pathlib
 import shutil
-from typing import Dict, List, NamedTuple, Optional
+from typing import Dict, List, NamedTuple, Optional, Union
 
 from cobbler import templar, utils
 from cobbler.enums import Archs
-
+from cobbler.items.system import System
 
 def add_remaining_kopts(kopts: dict) -> str:
     """Add remaining kernel_options to append_line
@@ -41,19 +41,21 @@ def add_remaining_kopts(kopts: dict) -> str:
     return " ".join(append_line)
 
 
-class BootFilesCopyset(NamedTuple):
+class BootFilesCopyset(NamedTuple):  # pylint: disable=missing-class-docstring
     src_kernel: str
     src_initrd: str
     new_filename: str
 
 
-class LoaderCfgsParts(NamedTuple):
+class LoaderCfgsParts(NamedTuple):  # pylint: disable=missing-class-docstring
     isolinux: List[str]
     grub: List[str]
     bootfiles_copysets: List[BootFilesCopyset]
 
 
-class BuildisoDirs(NamedTuple):
+class BuildisoDirsX86_64(
+    NamedTuple
+):  # noqa: N801 pylint: disable=invalid-name,missing-class-docstring
     root: pathlib.Path
     isolinux: pathlib.Path
     grub: pathlib.Path
@@ -61,7 +63,15 @@ class BuildisoDirs(NamedTuple):
     repo: pathlib.Path
 
 
-class Autoinstall(NamedTuple):
+class BuildisoDirsPPC64LE(NamedTuple):  # pylint: disable=missing-class-docstring
+    root: pathlib.Path
+    grub: pathlib.Path
+    ppc: pathlib.Path
+    autoinstall: pathlib.Path
+    repo: pathlib.Path
+
+
+class Autoinstall(NamedTuple):  # pylint: disable=missing-class-docstring
     config: str
     repos: List[str]
 
@@ -83,7 +93,6 @@ class BuildIso:
         self.isolinuxdir = ""
 
         # based on https://uefi.org/sites/default/files/resources/UEFI%20Spec%202.8B%20May%202020.pdf
-        # FIXME: PowerPC is missing from the table
         self.efi_fallback_renames = {
             "grubaa64": "bootaa64.efi",
             "grubx86.efi": "bootx64.efi",
@@ -103,6 +112,11 @@ class BuildIso:
         self.grub_menuentry_template = (
             pathlib.Path(api.settings().iso_template_dir)
             .joinpath("grub_menuentry.template")
+            .read_text(encoding="UTF-8")
+        )
+        self.bootinfo_template = (
+            pathlib.Path(api.settings().iso_template_dir)
+            .joinpath("bootinfo.template")
             .read_text(encoding="UTF-8")
         )
 
@@ -302,6 +316,15 @@ class BuildIso:
             template_type="jinja2",
         )
 
+    def _render_bootinfo_txt(self, distro_name: str) -> str:
+        """Render bootinfo.txt for ppc."""
+        return self.templar.render(
+            self.bootinfo_template,
+            out_path=None,
+            search_table={"distro_name": distro_name},
+            template_type="jinja2",
+        )
+
     def _copy_grub_into_esp(self, esp_image_location: str, arch: Archs):
         grub_name = self.calculate_grub_name(arch)
         efi_name = self.efi_fallback_renames.get(grub_name, grub_name)
@@ -381,6 +404,17 @@ class BuildIso:
         with open(output_file, "w") as f:
             f.write("\n".join(cfg_parts))
 
+    def _write_bootinfo(self, bootinfo_txt: str, output_dir: pathlib.Path) -> None:
+        """Write ppc/bootinfo.txt
+
+        :param bootinfo_parts: List of str that is written to the config, joined by newlines.
+        :param output_dir: pathlib.Path that the bootinfo.txt is written into.
+        """
+        output_file = output_dir / "bootinfo.txt"
+        self.logger.info("Writing %s", output_file)
+        with open(output_file, "w") as f:
+            f.write(bootinfo_txt)
+
     def _create_esp_image_file(self, tmpdir: str) -> str:
         esp = pathlib.Path(tmpdir) / "efi"
         mkfs_cmd = ["mkfs.fat", "-C", str(esp), "3528"]
@@ -439,8 +473,17 @@ class BuildIso:
         self.isolinuxdir = os.path.join(buildisodir, "isolinux")
         return buildisodir
 
-    def create_buildiso_dirs(self, buildiso_root: str) -> BuildisoDirs:
-        """Create directories in the buildiso root."""
+    def create_buildiso_dirs_x86_64(self, buildiso_root: str) -> BuildisoDirsX86_64:
+        """Create directories in the buildiso root.
+
+        Layout:
+        .
+        ├── autoinstall
+        ├── EFI
+        │   └── BOOT
+        ├── isolinux
+        └── repo_mirror
+        """
         root = pathlib.Path(buildiso_root)
         isolinuxdir = root / "isolinux"
         grubdir = root / "EFI" / "BOOT"
@@ -449,7 +492,7 @@ class BuildIso:
         for d in [isolinuxdir, grubdir, autoinstalldir, repodir]:
             d.mkdir(parents=True)
 
-        return BuildisoDirs(
+        return BuildisoDirsX86_64(
             root=root,
             isolinux=isolinuxdir,
             grub=grubdir,
@@ -457,7 +500,80 @@ class BuildIso:
             repo=repodir,
         )
 
-    def _generate_iso(self, xorrisofs_opts: str, iso: str, buildisodir: str, esp_path: str):
+    def create_buildiso_dirs_ppc64le(self, buildiso_root: str) -> BuildisoDirsPPC64LE:
+        """Create directories in the buildiso root.
+
+        Layout:
+        .
+        ├── autoinstall
+        ├── boot
+        ├── ppc
+        └── repo_mirror
+        """
+        root = pathlib.Path(buildiso_root)
+        grubdir = root / "boot"
+        ppcdir = root / "ppc"
+        autoinstalldir = root / "autoinstall"
+        repodir = root / "repo_mirror"
+        for _d in [grubdir, ppcdir, autoinstalldir, repodir]:
+            _d.mkdir(parents=True)
+
+        return BuildisoDirsPPC64LE(
+            root=root,
+            grub=grubdir,
+            ppc=ppcdir,
+            autoinstall=autoinstalldir,
+            repo=repodir,
+        )
+
+    def _xorriso_ppc64le(
+        self,
+        xorrisofs_opts: str,
+        iso: str,
+        buildisodir: str,
+        esp_path: str = "",
+    ):
+        """
+        Build the final xorrisofs command which is then executed on the disk.
+        :param xorrisofs_opts: The additional options for xorrisofs.
+        :param iso: The name of the output iso.
+        :param buildisodir: The directory in which we build the ISO.
+        """
+        del esp_path  # just accepted for polymorphism
+
+        cmd = [
+            "xorriso",
+            "-as",
+            "mkisofs",
+        ]
+        if xorrisofs_opts != "":
+            cmd.append(xorrisofs_opts)
+        cmd.extend(
+            [
+                "-chrp-boot",
+                "-hfs-bless-by",
+                "p",
+                "boot",
+                "-V",
+                "COBBLER_INSTALL",
+                "-o",
+                iso,
+                buildisodir,
+            ]
+        )
+
+        xorrisofs_return_code = utils.subprocess_call(cmd, shell=False)
+        if xorrisofs_return_code != 0:
+            self.logger.error("xorrisofs failed with non zero exit code!")
+            return
+
+        self.logger.info("ISO build complete")
+        self.logger.info("You may wish to delete: %s", buildisodir)
+        self.logger.info("The output file is: %s", iso)
+
+    def _xorriso_x86_64(
+        self, xorrisofs_opts: str, iso: str, buildisodir: str, esp_path: str
+    ):
         """
         Build the final xorrisofs command which is then executed on the disk.
         :param xorrisofs_opts: The additional options for xorrisofs.
@@ -465,6 +581,7 @@ class BuildIso:
         :param buildisodir: The directory in which we build the ISO.
         :param esp_path: The absolute path to the EFI system partition.
         """
+
         running_on, _ = utils.os_release()
         if running_on in ("suse", "centos", "virtuozzo", "redhat"):
             isohdpfx_location = pathlib.Path(self.api.settings().syslinux_dir).joinpath(
