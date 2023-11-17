@@ -34,7 +34,6 @@ RUN touch /var/lib/rpm/* &&   \
     python3-setuptools        \
     python3-sphinx            \
     python3-schema            \
-    python3-systemd           \
     epel-rpm-macros           \
     rpm-build                 \
     which
@@ -52,6 +51,7 @@ RUN touch /var/lib/rpm/* &&   \
     python3-ldap              \
     python3-librepo           \
     python3-pymongo           \
+    python3-systemd           \
     createrepo_c              \
     dnf-plugins-core          \
     xorriso                   \
@@ -62,6 +62,7 @@ RUN touch /var/lib/rpm/* &&   \
     tftp-server               \
     fence-agents              \
     supervisor                \
+    systemd                   \
     mtools                    \
     dosfstools
 
