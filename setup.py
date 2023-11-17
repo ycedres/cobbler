@@ -510,7 +510,8 @@ if __name__ == "__main__":
             "python-ldap",
             "dnspython",
             "file-magic",
-            "schema"
+            "schema",
+            "systemd-python",
         ],
         extras_require={
             "lint": ["pyflakes", "pycodestyle", "pylint", "black", "mypy"],

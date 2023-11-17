@@ -40,6 +40,7 @@ RUN zypper install --no-recommends -y \
     python3-distro             \
     python3-schema             \
     python3-setuptools         \
+    python3-systemd            \
     python3-pip                \
     python3-wheel              \
     python3-Cheetah3           \
