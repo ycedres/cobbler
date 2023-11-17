@@ -511,7 +511,7 @@ if __name__ == "__main__":
             "dnspython",
             "file-magic",
             "schema",
-            "systemd",
+            "systemd-python",
         ],
         extras_require={
             "lint": ["pyflakes", "pycodestyle", "pylint", "black", "mypy"],
