@@ -1,9 +1,11 @@
+import fcntl
 import os
 import re
 import shutil
 from pathlib import Path
 
 import pytest
+from pytest_mock import MockerFixture
 from netaddr.ip import IPAddress
 
 from cobbler import utils
@@ -1033,3 +1035,35 @@ def test_service_restart_service(mocker):
     # Assert
     assert result == 0
     utils.subprocess_call.assert_called_with(["service", "testservice", "restart"], shell=False)
+
+
+@pytest.mark.parametrize(
+    "flock_side_effect,os_open_mock_calls,os_close_mock_calls,expected_exception",
+    [
+        (None, 1, 0, does_not_raise()),
+        (Exception, 2, 1, pytest.raises(CX)),
+    ],
+)
+def test_filelock(
+    mocker: MockerFixture,
+    flock_side_effect,
+    os_open_mock_calls,
+    os_close_mock_calls,
+    expected_exception,
+):
+    # Arrange
+    os_open_mock = mocker.patch("os.open", return_value=1234)
+    os_close_mock = mocker.patch("os.close")
+    flock_mock = mocker.patch("fcntl.flock", side_effect=flock_side_effect)
+
+    # Act
+    with expected_exception:
+        with utils.filelock("foobar"):
+
+            # Assert
+            assert flock_mock.called_once_with(1234, fcntl.LOCK_EX)
+            assert os_open_mock.call_count == os_open_mock_calls
+            assert os_close_mock.call_count == os_close_mock_calls
+
+        assert flock_mock.called_once_with(1234, fcntl.LOCK_UN)
+        assert os_close_mock.called_once_with(1234)
