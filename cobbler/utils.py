@@ -20,8 +20,10 @@ Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA
 02110-1301  USA
 """
 
+import contextlib
 import enum
 import errno
+import fcntl
 import glob
 import json
 import logging
@@ -2131,3 +2133,23 @@ def is_str_float(value: str) -> bool:
     except ValueError:
         pass
     return False
+
+
+@contextlib.contextmanager
+def filelock(lock_file: str):
+    """
+    Context manager to acquire a file lock and release it afterwards
+
+    :param lock_file: Path to the file lock to acquire
+    :raises CX: Raised in case of unexpect error acquiring file lock.
+    """
+    fd = None
+    try:
+        fd = os.open(lock_file, os.O_RDWR | os.O_CREAT | os.O_TRUNC, 0o660)
+        fcntl.flock(fd, fcntl.LOCK_EX)
+        yield
+    finally:
+        if fd:
+            with contextlib.suppress(OSError):
+                fcntl.flock(fd, fcntl.LOCK_UN)
+            os.close(fd)
