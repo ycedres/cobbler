@@ -1,6 +1,9 @@
+import datetime
 import os
 import re
 import shutil
+import time
+from threading import Thread
 from pathlib import Path
 
 import pytest
@@ -1033,3 +1036,30 @@ def test_service_restart_service(mocker):
     # Assert
     assert result == 0
     utils.subprocess_call.assert_called_with(["service", "testservice", "restart"], shell=False)
+
+
+def test_filelock():
+    # Arrange
+    filelock_path = "/tmp/filelock_test"
+    thread_times = []
+
+    def thread_fun():
+        thread_times.append(datetime.datetime.now())  # type: ignore
+        with utils.filelock(filelock_path):
+            thread_times.append(datetime.datetime.now())  # type: ignore
+
+    t = Thread(target=thread_fun)
+
+    # Act
+    with utils.filelock(filelock_path):
+        t.start()
+        time.sleep(1)
+
+    t.join()
+
+    # Assert
+    assert os.path.isfile(filelock_path)
+
+    # Running time for Thread must be higher than 1 second, as
+    # the lock was locked when thread started.
+    assert thread_times[1] - thread_times[0] >= datetime.timedelta(seconds=1)
