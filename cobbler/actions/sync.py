@@ -236,8 +236,9 @@ class CobblerSync:
         """
         Write all files which are associated to DHCP.
         """
-        self.logger.info("rendering DHCP files")
-        self.dhcp.write_configs()
+        self.logger.info("Rendering DHCP files")
+        data = self.dhcp.gen_full_config()
+        self.dhcp.write_configs(data)
         self.dhcp.regen_ethers()
 
     def sync_dhcp(self):
@@ -246,7 +247,7 @@ class CobblerSync:
         """
         if self.settings.manage_dhcp:
             self.write_dhcp()
-            self.dhcp.sync_dhcp()
+            self.dhcp.sync()
 
     def clean_link_cache(self):
         """
@@ -436,7 +437,7 @@ class CobblerSync:
             return
         # rebuild system_list file in webdir
         if self.settings.manage_dhcp:
-            self.dhcp.regen_ethers()
+            self.dhcp.sync_single_system(system_obj)
         if self.settings.manage_dns:
             self.dns.regen_hosts()
         # write the PXE files for the system

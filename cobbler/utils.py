@@ -2161,7 +2161,7 @@ def merge_dicts_recursive(base_dict, updating_dict) -> Dict:
     :param updating_dict: Updating dict, overrides base_dict.
     :returns dict: Merged dict"""
     ret = base_dict.copy()
-    for k, v in updating_dict:
+    for k, v in updating_dict.items():
         if (
             k in base_dict
             and isinstance(v, dict)

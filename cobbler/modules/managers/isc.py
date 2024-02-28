@@ -60,10 +60,18 @@ class _IscManager(ManagerModule):
         self.settings_file_v4 = utils.dhcpconf_location(utils.DHCP.V4)
         self.settings_file_v6 = utils.dhcpconf_location(utils.DHCP.V6)
 
-        self.config = {}        # cache config to allow adding systems incrementally
+        self.config = {}  # cache config to allow adding systems incrementally
         self.generic_entry_cnt = 0
 
-    def sync_single_system(self, system: System):
+    def sync_single_system(self, system: "System"):
+        """
+        Update the config with data for a single system, write it to the filesysemt, and restart DHCP service.
+        :param system: System object to generate the config for.
+        """
+        if not self.config:
+            # cache miss, need full sync for consistent data
+            return self.sync()
+
         profile = system.get_conceptual_parent()  # TODO: null-check
         distro = profile.get_conceptual_parent()  # TODO: null-check
         blend_data = utils.blender(self.api, False, system)
@@ -77,21 +85,23 @@ class _IscManager(ManagerModule):
         return self.restart_service()
 
     def sync(self):
+        """
+        Generate full config from scratch, write it to the filesystem, and restart DHCP service.
+        """
+        # Reset generic counter and cached config
         self.generic_entry_cnt = 0
-        self.config = (
-            self._gen_full_config()
-        )  # cache result, enables sync_single_system to add to it
+        self.config = self.gen_full_config()
         self.write_configs(self.config)
         return self.restart_service()
 
-
     def _gen_system_config(
         self,
-        system_obj: System,
+        system_obj: "System",
         system_blend_data: Dict[str, Any],
-        distro_obj: Optional[Distro],
+        distro_obj: Optional["Distro"],
     ):
-        """Generate DHCP config for a single system.
+        """
+        Generate DHCP config for a single system.
 
         :param system_obj: System to generate DHCP config for
         :param system_blend_data: utils.blender() data for the System
@@ -102,7 +112,7 @@ class _IscManager(ManagerModule):
         ignore_macs = set()
         if not system_obj.is_management_supported():
             self.logger.debug(
-                "%s does not meet precondition: MAC, IPv4, or IPv6 addr is required.",
+                "%s does not meet precondition: MAC, IPv4, or IPv6 address is required.",
                 system_obj.name,
             )
             return {}
@@ -110,14 +120,23 @@ class _IscManager(ManagerModule):
         for iface_name, iface_obj in system_obj.interfaces.items():
             # TODO: move to own function
             iface = iface_obj.to_dict()
-            iface["gateway"] = iface_obj.if_gateway or system_obj.gateway
             mac = iface_obj.mac_address
+            if (
+                not self.settings.always_write_dhcp_entries
+                and not system_blend_data["netboot_enabled"]
+                and iface["static"]
+            ):
+                continue
+            if not mac:
+                self.logger.warning("%s has no MAC address", system_obj.name)
+                continue
+
+            iface["gateway"] = iface_obj.if_gateway or system_obj.gateway
             if iface["interface_type"] in (
                 "bond_slave",
                 "bridge_slave",
                 "bonded_bridge_slave",
             ):
-
                 if iface["interface_master"] not in system_obj.interfaces:
                     # Can't write DHCP entry: master interface does not exist
                     continue
@@ -153,9 +172,6 @@ class _IscManager(ManagerModule):
 
             if distro_obj is not None:
                 iface["distro"] = distro_obj.to_dict()
-            if not mac:  # TODO: move up?
-                self.logger.warning("%s has no MAC address", system_obj.name)
-                continue
             if host:
                 if iface_name == "eth0":
                     iface["name"] = host
@@ -171,12 +187,11 @@ class _IscManager(ManagerModule):
                 "filename",
                 "netboot_enabled",
                 "hostname",
-                "owner",
                 "enable_ipxe",
                 "name_servers",
-                "mgmt_parameters",
             ):  # TODO: what if they don't exist? original code has .get("filename"), but shouldn't be needed?
                 iface[key] = system_blend_data[key]
+            iface["owner"] = system_blend_data["name"]
             # esxi
             if distro_obj is not None and distro_obj.os_version.startswith("esxi"):
                 iface["filename_esxi"] = (
@@ -197,13 +212,6 @@ class _IscManager(ManagerModule):
                 elif distro_obj.arch == Archs.AARCH64:
                     iface["filename"] = "grub/grubaa64.efi"
 
-            # TODO: move up?
-            if (
-                not self.settings.always_write_dhcp_entries
-                and not iface["netboot_enabled"]
-                and iface["static"]
-            ):
-                continue
 
             if not dhcp_tag:
                 dhcp_tag = system_blend_data.get("dhcp_tag", "default")
@@ -221,7 +229,7 @@ class _IscManager(ManagerModule):
 
     def _find_ip_addr(
         self,
-        interfaces: Dict[str, NetworkInterface],
+        interfaces: Dict[str, "NetworkInterface"],
         prefix: str,
         ip_version: str,
     ) -> str:
@@ -239,7 +247,7 @@ class _IscManager(ManagerModule):
                 return getattr(obj, attr_name)
         return ""
 
-    def _gen_full_config(self):
+    def gen_full_config(self):
         """Generate DHCP configuration for all systems."""
         dhcp_tags = {"default": {}}
         self.generic_entry_cnt = 0
@@ -255,8 +263,8 @@ class _IscManager(ManagerModule):
         metadata = {
             "date": time.asctime(time.gmtime()),
             "cobbler_server": f"{self.settings.server}:{self.settings.http_port}",
-            "next_sever_v4": self.settings.next_server_v4,
-            "next_sever_v6": self.settings.next_server_v6,
+            "next_server_v4": self.settings.next_server_v4,
+            "next_server_v6": self.settings.next_server_v6,
             "dhcp_tags": dhcp_tags,
         }
         return metadata
@@ -280,16 +288,20 @@ class _IscManager(ManagerModule):
         except OSError as e:
             self.logger.error("Can't read dhcp template '%s':\n%s", template_file, e)
             return None
-
+        config_copy = config_data.copy() # template rendering changes the passed dict
         self.logger.info("Writing %s", settings_file)
-        self.templar.render(template_data, config_data, settings_file)
+        self.templar.render(template_data, config_copy, settings_file)
 
-    def write_v4_config(self, config_data=None, template_file="/etc/cobbler/dhcp.template"):
+    def write_v4_config(
+        self, config_data=None, template_file="/etc/cobbler/dhcp.template"
+    ):
         if not config_data:
             raise ValueError("No config to write.")
         self._write_config(config_data, template_file, self.settings_file_v4)
 
-    def write_v6_config(self, config_data=None, template_file="/etc/cobbler/dhcp6.template"):
+    def write_v6_config(
+        self, config_data=None, template_file="/etc/cobbler/dhcp6.template"
+    ):
         if not config_data:
             raise ValueError("No config to write.")
         self._write_config(config_data, template_file, self.settings_file_v6)
