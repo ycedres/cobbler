@@ -1063,3 +1063,19 @@ def test_filelock():
     # Running time for Thread must be higher than 1 second, as
     # the lock was locked when thread started.
     assert thread_times[1] - thread_times[0] >= datetime.timedelta(seconds=1)
+
+
+def test_merge_dicts_recursive():
+    base = {"toplevel_1": 1, "toplevel_2": 2, "nested_dict": {"default": {"deep_key_1": []}}}
+    update = {
+        "toplevel_1": "One",
+        "nested_dict": {"default": {"deep_key_1": True, "deep_key_2": None}},
+    }
+
+    expected = {
+        "toplevel_1": "One",
+        "toplevel_2": 2,
+        "nested_dict": {"default": {"deep_key_1": True, "deep_key_2": None}},
+    }
+
+    assert expected == utils.merge_dicts_recursive(base, update)
