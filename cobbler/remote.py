@@ -731,6 +731,8 @@ class CobblerXMLRPCInterface:
         ):
             return return_value.name
         elif isinstance(return_value, dict):
+            if (attribute == "kernel_options"):
+                return self.xmlrpc_hacks(return_value, return_list=True)
             if (
                 attribute == "interfaces"
                 and len(return_value) > 0
@@ -3309,7 +3311,16 @@ class CobblerXMLRPCInterface:
         self._log("get_random_mac", token=None)
         return utils.get_random_mac(self.api, virt_type)
 
-    def xmlrpc_hacks(self, data):
+    def _convert_dict_to_list(self, data):
+        data_list = []
+        for key, value in data.items():
+            if value is None:
+                data_list.append(key)
+            else:
+                data_list.append("%s=%s" % (key, value))
+        return data_list
+
+    def xmlrpc_hacks(self, data, return_list = False):
         """
         Convert None in XMLRPC to just '~' to make extra sure a client that can't allow_none can deal with this.
 
@@ -3318,6 +3329,24 @@ class CobblerXMLRPCInterface:
         :param data: The data to prepare for the XMLRPC response.
         :return: The converted data.
         """
+        if return_list:
+            if isinstance(data, dict):
+                data = self._convert_dict_to_list(data)
+                return utils.strip_none(data)
+
+        if isinstance(data, dict):
+            kernel_options_data = data.get('kernel_options')
+            if kernel_options_data and not kernel_options_data == "<<inherit>>":
+                data['kernel_options']  = self._convert_dict_to_list(kernel_options_data)
+
+        if isinstance(data, list):
+            for item in data:
+                if isinstance(item, dict):
+                    kernel_options_data = item.get('kernel_options')
+                    if kernel_options_data is None or kernel_options_data == "<<inherit>>":
+                        continue
+                    item['kernel_options'] = self._convert_dict_to_list(kernel_options_data)
+
         return utils.strip_none(data)
 
     def get_status(self, mode="normal", token=None, **rest):
