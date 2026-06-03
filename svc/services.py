@@ -38,8 +38,21 @@ def application(environ, start_response):
         # VIRTUALENV Support
         # see http://code.google.com/p/modwsgi/wiki/VirtualEnvironments
         import site
-        import distutils.sysconfig
-        site.addsitedir(distutils.sysconfig.get_python_lib(prefix=environ['VIRTUALENV']))
+        import sys
+
+        venv_prefix = environ['VIRTUALENV']
+        if sys.version_info >= (3, 11):
+            import sysconfig
+            venv_site_packages = sysconfig.get_path(
+                'purelib',
+                scheme='venv',
+                vars={'base': venv_prefix, 'platbase': venv_prefix}
+            )
+        else:
+            import distutils.sysconfig
+            venv_site_packages = distutils.sysconfig.get_python_lib(prefix=venv_prefix)
+
+        site.addsitedir(venv_site_packages)
         # Now all modules are available even under a virtualenv
 
     from cobbler.services import CobblerSvc
